@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html>
+ <head> 
+  <meta charset="UTF-8">
+  <link rel="stylesheet" href="css/common.css" /> 
+ </head> 
+ <body> 
+  <div  class="julia-wrapper">
+  <div  id="julia-form">  
+   <input type="text" placeholder="0.3" name="i" /> 
+   <input type="text" placeholder="0.4858" name="j" /> 
+   <input type="button" class="render-btn" value="渲染" name="renderBtn" /> 
+   <input type="button" class="fullscreen-btn" value="全屏" onclick="fullScreen()" /> 
+   <input type="button" class="download-btn" value="下载" onclick="download()" /> 
+<input type="button" class="download-btn" value="play" onclick="play()" />   
+  </div>
+   <canvas id="julia"></canvas>
+</div>  
+   
+  <script type="text/javascript" src="lib/math.js"></script> 
+  <script type="text/javascript" src="lib/canvas2image.js"></script> 
+  <script type="text/javascript" src="lib/helpers.js"></script>
+  <script type="text/javascript" src="app/helpers.js"></script>   
+  <script type="text/javascript" src="app/animate.js"></script> 
+  <script type="text/javascript" src="app/app.js"></script> 
+  <script>	
+    //基本变量
+	var ZERO = 0;
+	var ORIGIN_ZOOM = 1;
+	var ZOOMOUT_ONCE = 2;
+	var mX = 0;//偏移X总量
+	var mY = 0;//偏移Y总量
+	var c =-1.5;
+	var d = -1; 	
+	var zoomLevel = ZOOMOUT_ONCE;
+	//alert(document.documentElement.clientHeight);
+	//canvas Dom副本
+	var cvsBuffer;
+	var cvsBufferTop;
+	var cvsBufferTopRight;
+	var cvsBufferRight;
+	var cvsBufferBottomRight;
+	var cvsBufferBottom;
+	var cvsBufferBottomLeft;
+	var cvsBufferLeft;
+	var cvsBufferTopLeft;
+	
+	//其他flag变量及相关Dom对象
+	var julia={};
+	var countBtn=document.getElementsByName("renderBtn")[0];	
+	var cvs = cvsElem.getContext("2d");	
+	var lock = false;
+	
+	//web worker 线程数组
+    var worker = new Array(8);
+	
+	//临时canvas Dom 存放
+	var cvsTempDom = new Array(8);
+	var cvsTemp = new Array(8);
+	for(i=1;i<=8;i++){
+	cvsTempDom[i] = document.createElement('canvas');
+	cvsTempDom[i].width = TOTAL_HALF_WIDTH*2+1;
+	cvsTempDom[i].height = TOTAL_HALF_HEIGHT*2+1;
+	cvsTemp[i] = cvsTempDom[i].getContext('2d');
+	}
+
+    //开启线程并监听线程传来图像数据 	
+	for(i=1;i<=8;i++){
+	worker[i] = new Worker('work.js');
+	worker[i].onmessage = function (event) {
+          console.log(event.data);		 
+	      var data = event.data.data;
+		  var direction = event.data.dir;
+		  console.log("direction",direction,data);
+	      switch(direction){
+			  case 1:
+              cvsTemp[1].putImageData(data,0,0),
+			  cvsBufferTop = cloneCanvas(cvsTempDom[1]),
+              cvs.drawImage(cvsBufferTop,mX,mY-TOTAL_HALF_HEIGHT*2);			  
+              break;
+              case 2:
+              cvsTemp[2].putImageData(data,0,0),
+			  cvsBufferTopRight = cloneCanvas(cvsTempDom[2]),
+			  cvs.drawImage(cvsBufferTopRight,mX+TOTAL_HALF_WIDTH*2,mY-TOTAL_HALF_HEIGHT*2);
+              break;
+		      case 3:
+              cvsTemp[3].putImageData(data,0,0),
+			  cvsBufferRight = cloneCanvas(cvsTempDom[3]);
+			  cvs.drawImage(cvsBufferRight,mX+TOTAL_HALF_WIDTH*2,mY);
+              break;
+              case 4:
+              cvsTemp[4].putImageData(data,0,0),
+			  cvsBufferBottomRight = cloneCanvas(cvsTempDom[4]),
+			  cvs.drawImage(cvsBufferBottomRight,mX+TOTAL_HALF_WIDTH*2,mY+TOTAL_HALF_HEIGHT*2);
+              break;
+		      case 5:
+              cvsTemp[5].putImageData(data,0,0),
+			  cvsBufferBottom = cloneCanvas(cvsTempDom[5]),
+			  cvs.drawImage(cvsBufferBottom,mX,mY+TOTAL_HALF_HEIGHT*2);
+              break;
+              case 6:
+              cvsTemp[6].putImageData(data,0,0),
+			  cvsBufferBottomLeft = cloneCanvas(cvsTempDom[6]),
+			  cvs.drawImage(cvsBufferBottomLeft,mX-TOTAL_HALF_WIDTH*2,mY+TOTAL_HALF_HEIGHT*2);
+              break;
+		      case 7:
+              cvsTemp[7].putImageData(data,0,0),
+			  cvsBufferLeft = cloneCanvas(cvsTempDom[7]),
+			  cvs.drawImage(cvsBufferLeft,mX-TOTAL_HALF_WIDTH*2,mY);
+              break;
+              case 8:
+              cvsTemp[8].putImageData(data,0,0),
+			  cvsBufferTopLeft = cloneCanvas(cvsTempDom[8]),
+			  cvs.drawImage(cvsBufferTopLeft,mX-TOTAL_HALF_WIDTH*2,mY-TOTAL_HALF_HEIGHT*2);
+              break; 
+		     }
+        };
+	}
+	
+	//播放动画
+	function play(){
+	    julia=new JuliaFractal(TOTAL_HALF_WIDTH,TOTAL_HALF_HEIGHT);
+		rect = julia.cvsElem.getBoundingClientRect();
+		zoomLevel =ZOOMOUT_ONCE;		
+		var r=julia.render;
+        document.getElementsByName("i")[0].value=c;
+        document.getElementsByName("j")[0].value=d;
+		     			
+        r.bind(julia)(ZERO,ZERO,c,d,ORIGIN_ZOOM);
+		d=parseFloat(d+0.0125);
+		if(d>1){
+		c=c+0.05;
+		d=-1;
+		}
+		setTimeout("play()",200);
+	}
+	
+	//清空canvas Dom副本
+	function setBufferEmpty(){	
+	cvsBufferTop  = null;
+	cvsBufferTopRight  = null;
+	cvsBufferRight  = null;
+	cvsBufferBottomRight  = null;
+	cvsBufferBottom  = null;
+	cvsBufferBottomLeft  = null;
+	cvsBufferLeft  = null;
+	cvsBufferTopLeft  = null;
+	}
+	
+	function processMousemove(e){
+	 if(!lock){
+		if(zoomLevel !== ZOOMOUT_ONCE){	
+		mX =  mX+e.movementX;
+		mY =  mY+e.movementY;
+       	console.log("mousemove start:",e.movementX,e.movementY,mX,mY);		
+		cvs.clearRect(0,0,cvsElem.width,cvsElem.height);
+		cvs.drawImage(cvsBuffer,mX,mY);
+		
+        if(cvsBufferLeft)		
+		cvs.drawImage(cvsBufferLeft,mX-TOTAL_HALF_WIDTH*2,mY);		
+		
+		if(cvsBufferRight)
+        cvs.drawImage(cvsBufferRight,mX+TOTAL_HALF_WIDTH*2,mY);		
+		
+		if(cvsBufferTop)
+        cvs.drawImage(cvsBufferTop,mX,mY-TOTAL_HALF_HEIGHT*2);
+		if(cvsBufferBottom)
+		cvs.drawImage(cvsBufferBottom,mX,mY+TOTAL_HALF_HEIGHT*2);
+		if(cvsBufferBottomLeft)
+		cvs.drawImage(cvsBufferBottomLeft,mX-TOTAL_HALF_WIDTH*2,mY+TOTAL_HALF_HEIGHT*2);
+		if(cvsBufferBottomRight)
+		cvs.drawImage(cvsBufferBottomRight,mX+TOTAL_HALF_WIDTH*2,mY+TOTAL_HALF_HEIGHT*2);
+		if(cvsBufferTopLeft)
+		cvs.drawImage(cvsBufferTopLeft,mX-TOTAL_HALF_WIDTH*2,mY-TOTAL_HALF_HEIGHT*2);
+		if(cvsBufferTopRight)
+		cvs.drawImage(cvsBufferTopRight,mX+TOTAL_HALF_WIDTH*2,mY-TOTAL_HALF_HEIGHT*2);		
+		}        
+		console.log("processMousemove(drag,mX,mY,mX-1201,mY-801):",mX,mY,mX-1201,mY-801);
+		e.preventDefault();
+		}
+	}
+	
+	function processMousedown(e){
+	console.log("1",new Date().getTime());
+	let processTime = new Date().getTime();
+	console.log("mousemove evevt start outside! click");
+	    if(!lock && processTime-animateFinishedTime>20){
+		console.log("mousemove evevt start! click");
+		cvsElem.addEventListener("mousemove",processMousemove);
+		e.preventDefault();
+		}
+		
+		
+	}
+	
+	function removeMousemoveBind(){
+		cvsElem.removeEventListener("mousemove",processMousemove);		
+		console.log("removeMousemove start click！");
+	}
+	
+	//processMousedown被组块计算阻塞了，所以计算完才执行，自然锁不起作用
+	cvsElem.addEventListener("mousedown",processMousedown);	
+	cvsElem.addEventListener("mouseup",removeMousemoveBind);
+	cvsElem.addEventListener("mouseleave",removeMousemoveBind);
+	
+	//克隆一个canvas	 
+	function cloneCanvas(oldCanvas) {
+	console.log("clone:");   
+    var newCanvas = document.createElement('canvas');
+    var context = newCanvas.getContext('2d'); 
+    newCanvas.width = oldCanvas.width;
+    newCanvas.height = oldCanvas.height;   
+    context.drawImage(oldCanvas, 0, 0);
+    return newCanvas;
+    }
+	
+    //点击渲染按钮，渲染相应julia分形图   
+    countBtn.addEventListener("click",function(){
+	    //清空某些量
+	    setBufferEmpty();
+		mX = 0;	
+        mY = 0;		
+		//JuliaFractal对象
+	    julia=new JuliaFractal(TOTAL_HALF_WIDTH,TOTAL_HALF_HEIGHT);
+		//获取juliagraph位置对象 rect
+		rect = julia.cvsElem.getBoundingClientRect();
+		//设置初始化缩放级别
+		zoomLevel =ZOOMOUT_ONCE;
+        //获取渲染函数r		
+		var r=julia.render;
+		//获取填写参数
+        var a=document.getElementsByName("i")[0].value;
+        var b=document.getElementsByName("j")[0].value;
+		c= -0.6;
+		d= 0.46;
+		if(a&&b){ 
+		c=parseFloat(a);
+        d=parseFloat(b);	
+		}
+        //根据c,d参数,渲染julia分形图		
+        r.bind(julia)(ZERO,ZERO,c,d,ORIGIN_ZOOM);
+		//保存一份渲染出的canvas Dom副本到cvsBuffer
+		cvsBuffer = cloneCanvas(cvsElem);		
+    })
+	
+	function startRenderAnimate(cvsElem,tx,ty,zoomLevel,r){	
+	moveTimer = animateProcess(cvsElem,tx,ty,zoomLevel,r);
+	}
+	
+	function locateJuliaGraph(e){
+	console.log("dblclick start！");
+	//x,y分别表示笛卡尔坐标系中的坐标位置
+	var x = e.pageX - rect.left-TOTAL_HALF_WIDTH;
+	var y = TOTAL_HALF_HEIGHT-e.pageY + rect.top;   	
+	var r=julia.render;	
+	let tX = x-mX;
+	let tY = y+mY;
+	console.log("locateJuliaGraph(click):",x,y,tX,tY);
+	startRenderAnimate(cvsElem,x,y,zoomLevel,r);
+    zoomLevel = zoomLevel*2;
+	}
+	
+	//点击放大事件
+	cvsElem.addEventListener("dblclick",function(e){
+    lock = true;	
+	throttle(locateJuliaGraph,600,null,[e]);//节流	
+	})
+</script>   
+ </body>
+</html>
